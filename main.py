@@ -7,7 +7,7 @@ app = FastAPI()
 # ✅ Add this CORS setup
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://aviator-pro-mu.vercel.app/"],  # For full security, replace "*" with your Vercel domain
+    allow_origins=["https://aviator-pro-mu.vercel.app"],  # For full security, replace "*" with your Vercel domain
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
