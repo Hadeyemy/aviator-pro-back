@@ -4,14 +4,14 @@ from pydantic import BaseModel
 
 app = FastAPI()
 
-# Enable CORS
+# ✅ Add this CORS setup
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # For full security, replace "*" with your Vercel domain
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 class PredictionRequest(BaseModel):
     history: str
     bankroll: float
