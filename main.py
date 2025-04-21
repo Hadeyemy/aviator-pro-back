@@ -1,74 +1,31 @@
-
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List
-import random
-import numpy as np
 
 app = FastAPI()
 
-# CORS setup
+# Enable CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Request body model
-class PredictRequest(BaseModel):
+class PredictionRequest(BaseModel):
     history: str
-    bankroll: float = 100.0
+    bankroll: float
 
 @app.post("/predict")
-async def predict(data: PredictRequest):
-    try:
-        raw_values = [float(x.strip()) for x in data.history.split(",") if x.strip()]
-        if len(raw_values) < 10:
-            return {"error": "At least 10 past values required."}
+async def predict(request: PredictionRequest):
+    history = request.history
+    bankroll = request.bankroll
 
-        bankroll = data.bankroll
+    # --- Your prediction logic here ---
+    predictions = [1.5, 2.0, 1.8, 2.5, 1.1, 1.05, 3.2, 2.2, 1.7, 2.8]
+    strategy = {
+        "low_risk": {"bet": 1.5, "stake": bankroll * 0.6},
+        "high_risk": {"bet": 2.8, "stake": bankroll * 0.4}
+    }
 
-        mean_val = np.mean(raw_values[-20:])
-        std_dev = np.std(raw_values[-20:])
-
-        predictions = []
-        for _ in range(10):
-            noise = np.random.normal(0, std_dev * 0.25)
-            prediction = max(1.01, mean_val + noise)
-            predictions.append(round(prediction, 2))
-
-        low_risk_target = 1.3
-        high_risk_target = 2.5
-
-        win_chance_low = min(0.95, np.sum(np.array(raw_values) >= low_risk_target) / len(raw_values))
-        win_chance_high = min(0.65, np.sum(np.array(raw_values) >= high_risk_target) / len(raw_values))
-
-        def kelly_criterion(p, b):
-            if b == 0 or p == 0:
-                return 0
-            return max(0, (p * (b + 1) - 1) / b)
-
-        stake_low = round(bankroll * kelly_criterion(win_chance_low, low_risk_target - 1), 2)
-        stake_high = round(bankroll * kelly_criterion(win_chance_high, high_risk_target - 1), 2)
-
-        strategy = {
-            "low_risk": {
-                "bet": low_risk_target,
-                "stake": min(stake_low, bankroll * 0.6)
-            },
-            "high_risk": {
-                "bet": high_risk_target,
-                "stake": min(stake_high, bankroll * 0.4)
-            }
-        }
-
-        return {
-            "predictions": predictions,
-            "strategy": strategy
-        }
-
-    except Exception as e:
-        return {"error": str(e)}
+    return {"predictions": predictions, "strategy": strategy}
