@@ -1,96 +1,68 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import random
-import pandas as pd
-from sklearn.linear_model import LinearRegression
-import numpy as np
 
 app = FastAPI()
 
-# CORS Configuration to allow Vercel frontend
+# CORS setup for frontend access
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://aviator-pro-mu.vercel.app"],  # Replace with your Vercel app domain
+    allow_origins=["https://aviator-pro-mu.vercel.app"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Data structure to hold historical data for crash predictions
-history_data = []  # This will be your database or list to store past predictions
-
-# Define the prediction request
 class PredictionRequest(BaseModel):
+    history: str
     bankroll: float
 
-# Define the prediction response
-class PredictionResponse(BaseModel):
-    predicted_odd: float
-    low_risk_bet: float
-    high_risk_bet: float
-    message: str
+class RoundResult(BaseModel):
+    odds: float
+    won: bool
 
-def train_model():
-    """ Train the machine learning model """
-    # Convert the historical data into a DataFrame for training
-    if len(history_data) < 2:  # Ensure there is enough data to train
-        return None
+# Simple function to predict the next round's odds (randomly for simplicity)
+def predict_next_round(history):
+    # Predict a random odds range for the next round (1.01 to 10)
+    return round(random.uniform(1.01, 10.00), 2)
 
-    df = pd.DataFrame(history_data)
-    
-    # Feature: The previous predicted odds (X), Target: The next round's odds (y)
-    X = df[['predicted_odd']].values  # Features
-    y = df['actual_odd'].values  # Target variable
-    
-    # Train a simple Linear Regression model
-    model = LinearRegression()
-    model.fit(X, y)
-    
-    return model
+# Function to calculate bet size based on current bankroll (simple strategy)
+def calculate_bet(bankroll, round_num):
+    bet_fraction = 0.1  # Bet 10% of current bankroll
+    return round(bankroll * bet_fraction, 2)
 
-@app.post("/predict", response_model=PredictionResponse)
+# Function to update bankroll after a round (based on win or loss)
+def update_bankroll(bankroll, bet, odds, won):
+    if won:
+        bankroll += bet * (odds - 1)  # Profit from winning the bet
+    else:
+        bankroll -= bet  # Loss if the bet was wrong
+    return round(bankroll, 2)
+
+@app.post("/predict")
 async def predict(request: PredictionRequest):
+    history = request.history
     bankroll = request.bankroll
 
-    # --- Machine Learning Prediction ---
-    model = train_model()
-    
-    # If there is no trained model yet, generate a random prediction (for the first round)
-    if model is None:
-        predicted_odd = random.uniform(1.01, 10.00)  # Random value between 1.01 and 10.00
-    else:
-        # Use the model to predict the next round's odds based on the previous round's odds
-        last_prediction = history_data[-1]['predicted_odd'] if history_data else random.uniform(1.01, 10.00)
-        predicted_odd = model.predict([[last_prediction]])[0]  # Predict the next round
+    # Predict next round's odds
+    odds = predict_next_round(history)
 
-    # --- Bankroll Management ---
-    low_risk_bet = bankroll * 0.6  # Low-risk bet: 60% of bankroll
-    high_risk_bet = bankroll * 0.4  # High-risk bet: 40% of bankroll
+    # Calculate bet size for the next round
+    bet = calculate_bet(bankroll, len(history.split(',')))
 
-    # Save the prediction (we assume actual_odd is entered after the round is finished)
-    history_data.append({
-        "bankroll": bankroll,
-        "predicted_odd": predicted_odd,
-        "actual_odd": 0  # Placeholder, actual_odd will be updated after the round
-    })
+    return {"predictions": {"odds": odds, "bet": bet}}
 
-    # Constructing response
-    message = f"Predicted odd for next round: {predicted_odd:.2f}. Your low-risk bet: ${low_risk_bet:.2f}, high-risk bet: ${high_risk_bet:.2f}."
-    
-    return {"predicted_odd": predicted_odd, "low_risk_bet": low_risk_bet, "high_risk_bet": high_risk_bet, "message": message}
+@app.post("/update")
+async def update(request: RoundResult, history: str, bankroll: float):
+    odds = request.odds
+    won = request.won
 
-@app.post("/update_result")
-async def update_result(prediction_index: int, actual_odd: float):
-    """ Endpoint to update the actual odd and retrain the model """
-    if prediction_index < len(history_data):
-        # Update the actual odd in the history
-        history_data[prediction_index]['actual_odd'] = actual_odd
-        
-        # Retrain the model with the updated data
-        model = train_model()
-        
-        return {"status": "success", "message": "Data updated and model retrained."}
-    
-    raise HTTPException(status_code=404, detail="Prediction index not found")
+    # Update bankroll after the round
+    bet = calculate_bet(bankroll, len(history.split(',')))
+    bankroll = update_bankroll(bankroll, bet, odds, won)
 
+    # Add the result to history (you can improve this by using more detailed history)
+    history += f",{odds}:{'win' if won else 'loss'}"
+
+    return {"updated_bankroll": bankroll, "updated_history": history}
